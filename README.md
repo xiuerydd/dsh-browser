@@ -14,12 +14,6 @@
 - **会话记忆**：窗口位置/大小、上次打开的标签页、全部设置持久化（%APPDATA%\dsh-browser）
 - **服务器日志面板**：实时查看 dsh web 输出，排查端口占用、启动失败等问题
 
-## 截图
-
-浅色主题（自动跟随 Harness 主题） | 深色主题
-:---: | :---:
-![浅色主题](assets/screenshots/browser-light.png) | ![深色主题](assets/screenshots/browser-dark.png)
-
 ## 快速开始
 
 要求：Windows 10/11 + Node.js 18+
@@ -32,7 +26,7 @@ npm start     rem 或直接双击 start-dsh-browser.cmd
 
 默认连接 `http://127.0.0.1:3080`（DSH Web 默认端口）。若 Harness 跑在其他端口，在「设置 → 服务器」中修改。
 
-> **启动速度提示**：桌面快捷方式请指向 `dist\win-unpacked\DeepSeek Harness Browser.exe`（解压版，1 秒左右出窗）。便携版 exe（`dist\DeepSeek Harness Browser 1.0.0.exe`）每次启动都要解压到临时目录、且会被杀软逐文件扫描，启动可能慢达数十秒，仅作分发备份保留。注意：解压版依赖 `win-unpacked` 文件夹留在原地，移动项目目录后需重建快捷方式。
+> **启动速度提示**：桌面快捷方式请指向 `dist\win-unpacked\DeepSeek Harness Browser.exe`（解压版，1 秒左右出窗）。便携版 exe（`dist\DeepSeek Harness Browser 0.1.0-rc.6.exe`）每次启动都要解压到临时目录、且会被杀软逐文件扫描，启动可能慢达数十秒，仅作分发备份保留。注意：解压版依赖 `win-unpacked` 文件夹留在原地，移动项目目录后需重建快捷方式。
 
 ## 快捷键
 

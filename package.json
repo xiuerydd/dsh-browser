@@ -1,7 +1,7 @@
 {
   "name": "dsh-browser",
   "productName": "DeepSeek Harness Browser",
-  "version": "1.0.0",
+  "version": "0.1.0-rc.6",
   "description": "仅为 DeepSeek Harness 打造的专用桌面浏览器壳",
   "type": "module",
   "main": "src/main.js",
