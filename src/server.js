@@ -163,7 +163,6 @@ export class ServerManager extends EventEmitter {
         env: { ...process.env }
       })
       this.ownsServer = true
-      this.settings.set({ server: { lastChildPid: this.child.pid } })
     } catch (err) {
       this.log('err', `[dsh-browser] 启动失败: ${err.message}`)
       this.#setState('error')
@@ -275,6 +274,14 @@ export class ServerManager extends EventEmitter {
         this.#setState('online')
         if (this.child) this.log('out', `[dsh-browser] 服务已就绪: ${this.url}`)
         this.#startPolling(false)
+      }
+      // shell:true 下 child.pid 是 cmd 壳的 PID，这里记录真实监听 PID，供下次启动认领
+      if (this.ownsServer) {
+        const pid = await this.listeningPid(this.settings.get('server.port'))
+        const prev = this.settings.get('server.lastChildPid')
+        if (pid != null && Number(prev) !== Number(pid)) {
+          this.settings.set({ server: { lastChildPid: pid } })
+        }
       }
     } else if (was === 'online' || was === 'checking') {
       this.#setState(this.child ? 'starting' : 'stopped')
