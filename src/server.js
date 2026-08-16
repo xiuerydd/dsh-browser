@@ -83,6 +83,23 @@ export class ServerManager extends EventEmitter {
     })
   }
 
+  /** Windows: 谁在监听这个端口（netstat 解析）；不可用时返回 null。 */
+  async listeningPid(port) {
+    try {
+      const { stdout } = await execFileP('netstat.exe', ['-ano', '-p', 'tcp'])
+      for (const line of stdout.split(/\r?\n/)) {
+        const parts = line.trim().split(/\s+/)
+        if (parts.length >= 5 && parts[3] === 'LISTENING' && parts[1].endsWith(':' + port)) {
+          const pid = Number(parts[4])
+          if (Number.isInteger(pid) && pid > 0) return pid
+        }
+      }
+    } catch {
+      // netstat unavailable: fall through
+    }
+    return null
+  }
+
   async #resolveCommand() {
     const cmd = String(this.settings.get('server.command') || 'dsh').trim()
     if (/[\\/]/.test(cmd)) {
@@ -108,7 +125,11 @@ export class ServerManager extends EventEmitter {
     if (this.child && force) await this.stop()
 
     if (await this.checkOnline()) {
-      this.ownsServer = false
+      const s0 = this.settings.get('server')
+      const stored = this.settings.get('server.lastChildPid')
+      const pid = await this.listeningPid(s0.port)
+      this.ownsServer = stored != null && pid != null && Number(stored) === Number(pid)
+      if (this.ownsServer) this.log('out', '[dsh-browser] 已认领上次启动的服务 (PID ' + pid + ')')
       this.#setState('online')
       this.#startPolling(false)
       return this.status()
@@ -142,6 +163,7 @@ export class ServerManager extends EventEmitter {
         env: { ...process.env }
       })
       this.ownsServer = true
+      this.settings.set({ server: { lastChildPid: this.child.pid } })
     } catch (err) {
       this.log('err', `[dsh-browser] 启动失败: ${err.message}`)
       this.#setState('error')
@@ -161,6 +183,7 @@ export class ServerManager extends EventEmitter {
       this.log('out', `[dsh-browser] 服务进程已退出 (code=${code} signal=${signal ?? 'none'})`)
       this.child = null
       this.ownsServer = false
+      this.settings.set({ server: { lastChildPid: null } })
       if (this.state === 'starting' || this.state === 'online') this.#setState('stopped')
     })
 
@@ -183,7 +206,23 @@ export class ServerManager extends EventEmitter {
         child.kill('SIGTERM')
       }
       this.log('out', '[dsh-browser] 服务已停止')
+    } else if (this.ownsServer) {
+      const stored = this.settings.get('server.lastChildPid')
+      if (stored != null) {
+        this.log('out', '[dsh-browser] 正在停止服务 (PID ' + stored + ') ...')
+        if (process.platform === 'win32') {
+          await new Promise((resolve) => {
+            execFile('taskkill', ['/pid', String(stored), '/T', '/F'], () => resolve())
+          })
+        } else {
+          try {
+            process.kill(Number(stored), 'SIGTERM')
+          } catch {}
+        }
+      }
     }
+    this.ownsServer = false
+    this.settings.set({ server: { lastChildPid: null } })
     this.#setState('stopped')
   }
 
