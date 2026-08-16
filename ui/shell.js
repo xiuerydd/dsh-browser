@@ -257,6 +257,20 @@ function hideMenus() {
   $('#chipmenu').classList.add('hidden')
   $('#appmenu').classList.add('hidden')
   $('#tabmenu')?.remove()
+  if (menuBackdrop !== null) menuBackdrop.classList.add('hidden')
+}
+
+// Webview clicks never reach the shell document, so a full-window backdrop
+// swallows the next click anywhere (including inside the page) to dismiss menus.
+let menuBackdrop = null
+function showMenuBackdrop() {
+  if (menuBackdrop === null) {
+    menuBackdrop = document.createElement('div')
+    menuBackdrop.id = 'menu-backdrop'
+    menuBackdrop.addEventListener('click', () => hideMenus())
+    document.body.appendChild(menuBackdrop)
+  }
+  menuBackdrop.classList.remove('hidden')
 }
 
 function positionMenu(menu, anchor) {
@@ -280,6 +294,7 @@ function menuItem(menu, opts) {
 
 function showChipMenu() {
   hideMenus()
+  showMenuBackdrop()
   const menu = $('#chipmenu')
   menu.textContent = ''
   const st = state.server ?? {}
@@ -297,6 +312,7 @@ function showChipMenu() {
 
 function showAppMenu() {
   hideMenus()
+  showMenuBackdrop()
   const menu = $('#appmenu')
   menu.textContent = ''
   const t = activeTab()
