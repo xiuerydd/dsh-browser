@@ -1,0 +1,37 @@
+{
+  "name": "dsh-browser",
+  "productName": "DeepSeek Harness Browser",
+  "version": "1.0.0",
+  "description": "仅为 DeepSeek Harness 打造的专用桌面浏览器壳",
+  "type": "module",
+  "main": "src/main.js",
+  "license": "MIT",
+  "author": "dsh-browser contributors",
+  "scripts": {
+    "start": "electron .",
+    "icons": "node scripts/make-icons.mjs",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^43.4.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.deepseek.dsh-browser",
+    "productName": "DeepSeek Harness Browser",
+    "copyright": "DSH Browser",
+    "files": [
+      "src/**/*",
+      "ui/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "assets/icons/dsh-browser.ico"
+    }
+  }
+}
