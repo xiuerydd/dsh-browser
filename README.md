@@ -14,6 +14,12 @@
 - **会话记忆**：窗口位置/大小、上次打开的标签页、全部设置持久化（%APPDATA%\dsh-browser）
 - **服务器日志面板**：实时查看 dsh web 输出，排查端口占用、启动失败等问题
 
+## 截图
+
+浅色主题（自动跟随 Harness 主题） | 深色主题
+:---: | :---:
+![浅色主题](assets/screenshots/browser-light.png) | ![深色主题](assets/screenshots/browser-dark.png)
+
 ## 快速开始
 
 要求：Windows 10/11 + Node.js 18+
