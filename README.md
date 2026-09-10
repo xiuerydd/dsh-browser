@@ -16,7 +16,32 @@
 
 ## 快速开始
 
-要求：Windows 10/11 + Node.js 18+
+**安装版（推荐）**：双击安装即可——安装包已**内置 DeepSeek Harness（dsh）**，装完无需 Node.js、无需单独安装 dsh，开箱即用。
+
+构建安装包（两段式，推荐）：
+
+```bash
+npm install                # 首次：安装 electron / electron-builder / @deepseek-ai/dsh
+bash build-installer.sh    # 出应用骨架 + 投放完整依赖 + 生成 NSIS 安装包
+```
+
+之所以分两段：dsh 的依赖闭包有 400+ 个包、8000+ 个文件，其中大量依赖声明在
+`peerDependencies` 里。electron-builder 的依赖收集器**只沿 `dependencies` 链递归**，
+会静默漏掉这些包（构建成功但运行时报 `ERROR_MODULE_NOT_FOUND`），所以改用
+`extraResources` 把整个 `node_modules` 作为资源目录投放，再走 `--prepackaged` 出包。
+
+脚本做的事：
+
+1. `electron-builder --win --dir` 出应用骨架（含 `app.asar`）
+2. `python scripts/stage-dsh-runtime.py <win-unpacked>` 多线程投放完整 `node_modules`
+   到 `resources/dsh-runtime/node_modules`
+3. `node scripts/verify-bundle.mjs <路径>` 校验运行时闭包完整性（0 缺失才继续）
+4. `electron-builder --win nsis --prepackaged <win-unpacked>` 生成安装包
+
+> Windows 上如果构建被安全软件/沙箱拦截，需要允许大量文件写入。
+> 构建产物在 `out-<时间戳>/`（解包版）和 `dist-final/`（安装包）。
+
+**源码运行**：要求 Windows 10/11 + Node.js 18+
 
 ```bat
 cd dsh-browser
@@ -24,9 +49,11 @@ npm install   rem 首次安装 Electron（国内可先设 ELECTRON_MIRROR=https:
 npm start     rem 或直接双击 start-dsh-browser.cmd
 ```
 
+源码运行方式需要本机已安装 DeepSeek Harness CLI（`npm i -g @deepseek-ai/dsh`），或在「设置 → 服务器 → 启动命令」中填写 dsh 路径。若项目 `node_modules` 里已有 `@deepseek-ai/dsh`，也会自动使用它（无需全局安装）。
+
 默认连接 `http://127.0.0.1:3080`（DSH Web 默认端口）。若 Harness 跑在其他端口，在「设置 → 服务器」中修改。
 
-> **启动速度提示**：桌面快捷方式请指向 `dist\win-unpacked\DeepSeek Harness Browser.exe`（解压版，1 秒左右出窗）。便携版 exe（`dist\DeepSeek Harness Browser 0.1.0-rc.6.exe`）每次启动都要解压到临时目录、且会被杀软逐文件扫描，启动可能慢达数十秒，仅作分发备份保留。注意：解压版依赖 `win-unpacked` 文件夹留在原地，移动项目目录后需重建快捷方式。
+> **启动速度提示**：安装版快捷方式（NSIS Setup 自动创建）指向 `AppData\Local\Programs\dsh-browser\` 下的独立 exe，1 秒左右出窗。开发调试可用 `dist\win-unpacked\DeepSeek Harness Browser.exe`（解压版，依赖该文件夹留在原地）。
 
 ## 快捷键
 

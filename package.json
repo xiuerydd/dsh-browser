@@ -10,11 +10,15 @@
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/make-icons.mjs",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "verify:bundle": "node scripts/verify-bundle.mjs"
   },
   "devDependencies": {
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "0.1.2-rc.1"
   },
   "build": {
     "appId": "com.deepseek.dsh-browser",
@@ -26,9 +30,31 @@
       "assets/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "node_modules",
+        "to": "dsh-runtime/node_modules",
+        "filter": [
+          "**/*",
+          "!**/.bin/**",
+          "!**/.package-lock.json",
+          "!electron/**",
+          "!electron-builder/**",
+          "!app-builder-lib/**",
+          "!app-builder-bin/**",
+          "!builder-util/**",
+          "!builder-util-runtime/**",
+          "!dmg-builder/**",
+          "!@electron/**",
+          "!@electron-internal/**",
+          "!@malept/**"
+        ]
+      }
+    ],
     "directories": {
       "output": "dist"
     },
+    "npmRebuild": false,
     "win": {
       "target": "nsis",
       "icon": "assets/icons/dsh-browser.ico"

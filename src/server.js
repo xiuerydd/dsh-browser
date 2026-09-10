@@ -5,6 +5,17 @@ import http from 'node:http'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
+
+// 内置 dsh 的候选位置（按优先级）：
+//   1. 打包版：resources/dsh-runtime/node_modules/...（extraResources 整体投放，不经依赖推断）
+//   2. 打包版兜底：resources/app.asar.unpacked/node_modules/...
+//   3. 开发版：项目 node_modules/...
+const BUNDLED_DSH_CANDIDATES = [
+  process.resourcesPath ? path.join(process.resourcesPath, 'dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js') : '',
+  process.resourcesPath ? path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js') : '',
+  path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+].filter(Boolean)
 
 const execFileP = promisify(execFile)
 
@@ -111,7 +122,7 @@ export class ServerManager extends EventEmitter {
     const cmd = String(this.settings.get('server.command') || 'dsh').trim()
     if (/[\\/]/.test(cmd)) {
       this.commandPath = cmd
-      return cmd
+      return { cmd }
     }
     if (process.platform === 'win32') {
       // 直接在 PATH 中找 <cmd>.cmd/.exe/.bat：
@@ -124,9 +135,17 @@ export class ServerManager extends EventEmitter {
           const p = path.join(dir.trim(), cmd + ext)
           if (fs.existsSync(p)) {
             this.commandPath = p
-            return p
+            return { cmd: p }
           }
         }
+      }
+    }
+    // 内置 dsh 兜底：随安装包分发（asar.unpacked）或项目 node_modules 中的副本，
+    // 以 Electron 自带 Node 运行（ELECTRON_RUN_AS_NODE=1），无需系统安装 Node/dsh
+    for (const bundled of BUNDLED_DSH_CANDIDATES) {
+      if (fs.existsSync(bundled)) {
+        this.commandPath = bundled
+        return { cmd: process.execPath, preArgs: [bundled], bundled: true }
       }
     }
     try {
@@ -137,7 +156,7 @@ export class ServerManager extends EventEmitter {
         : lines[0]
       if (first) {
         this.commandPath = first
-        return first
+        return { cmd: first }
       }
     } catch {
       // not found
@@ -169,9 +188,9 @@ export class ServerManager extends EventEmitter {
 
     this.#setState('starting')
     this.log('out', '[dsh-browser] 正在启动 dsh web 服务 ...')
-    const cmd = await this.#resolveCommand()
-    if (!cmd) {
-      this.log('err', '[dsh-browser] 未找到 dsh 命令：请安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh），或在设置中填写启动命令')
+    const resolved = await this.#resolveCommand()
+    if (!resolved) {
+      this.log('err', '[dsh-browser] 未找到 dsh：安装版应自带（resources/dsh）；开发环境请安装 @deepseek-ai/dsh（npm i -g @deepseek-ai/dsh）或在设置中填写启动命令')
       this.#setState('error')
       return this.status()
     }
@@ -180,13 +199,17 @@ export class ServerManager extends EventEmitter {
     const args = ['web', '--port', String(s.port)]
     if (s.host && s.host !== '127.0.0.1') args.push('--host', s.host)
     this._startedAt = Date.now()
-    this.log('out', `[dsh-browser] $ ${cmd} ${args.join(' ')}`)
+    const spawnCmd = resolved.cmd
+    const spawnArgs = [...(resolved.preArgs ?? []), ...args]
+    this.log('out', `[dsh-browser] $ ${[spawnCmd, ...spawnArgs].join(' ')}`)
     try {
-      this.child = spawn(cmd, args, {
+      this.child = spawn(spawnCmd, spawnArgs, {
         cwd: s.workspaceDir || os.homedir(),
-        shell: true,
+        shell: !resolved.bundled,
         windowsHide: true,
-        env: { ...process.env }
+        env: resolved.bundled
+          ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+          : { ...process.env }
       })
       this.ownsServer = true
     } catch (err) {
