@@ -64,6 +64,14 @@ echo ">>> [1/4] 生成应用骨架 -> $OUT"
 npx electron-builder --win --dir -c.directories.output="$OUT"
 
 UNPACKED="$OUT/win-unpacked"
+
+# 骨架健康检查：确认图标/版本信息已写入 exe。
+# 完整构建的产物才带图标；构建被中断或失败时 exe 会保留 Electron 默认图标，
+# 拿它去 --prepackaged 出包会导致装完图标不对（功能却正常，很难发现）。
+echo
+echo ">>> [1b/4] 检查骨架健康度（图标是否写入）"
+"$PY" scripts/check-skeleton.py "$UNPACKED"
+
 echo
 echo ">>> [2/4] 投放完整依赖闭包到 $UNPACKED/resources/dsh-runtime"
 "$PY" scripts/stage-dsh-runtime.py "$UNPACKED"
