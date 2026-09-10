@@ -208,15 +208,22 @@ export class ServerManager extends EventEmitter {
     } else if (this.ownsServer) {
       const stored = this.settings.get('server.lastChildPid')
       if (stored != null) {
-        this.log('out', '[dsh-browser] 正在停止服务 (PID ' + stored + ') ...')
-        if (process.platform === 'win32') {
-          await new Promise((resolve) => {
-            execFile('taskkill', ['/pid', String(stored), '/T', '/F'], () => resolve())
-          })
+        // 防 PID 复用误杀：仅当该 PID 仍在监听配置端口时才动手（与启动认领逻辑同口径）
+        const live = await this.listeningPid(this.settings.get('server.port'))
+        if (live != null && Number(live) === Number(stored)) {
+          this.log('out', '[dsh-browser] 正在停止服务 (PID ' + live + ') ...')
+          if (process.platform === 'win32') {
+            await new Promise((resolve) => {
+              execFile('taskkill', ['/pid', String(live), '/T', '/F'], () => resolve())
+            })
+          } else {
+            try {
+              process.kill(Number(live), 'SIGTERM')
+            } catch {}
+          }
+          this.log('out', '[dsh-browser] 服务已停止')
         } else {
-          try {
-            process.kill(Number(stored), 'SIGTERM')
-          } catch {}
+          this.log('out', '[dsh-browser] 记录的服务 PID ' + stored + ' 已不在监听本端口，跳过停止（服务可能已被外部关闭，或 PID 已被复用）')
         }
       }
     }

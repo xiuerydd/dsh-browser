@@ -12,9 +12,11 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 export function normalizeTarget(input, baseUrl) {
   const raw = String(input ?? '').trim()
   if (!raw) return null
+  // localhost 特判：否则会命中下面的 scheme 检查，被当作 "localhost:" 协议判成 external
+  if (/^localhost(:\d+)?(\/\S*)?$/i.test(raw)) return 'http://' + raw
   if (/^[a-z][a-z0-9+.-]*:/i.test(raw)) return raw
   if (raw.startsWith('//')) return 'http:' + raw
-  if (/^([[0-9a-f:]+]|[0-9a-f:.]+)(:\d+)?(\/\S*)?$/i.test(raw)) return 'http://' + raw
+  if (/^(\[[0-9a-f:]+\]|[0-9a-f:.]+)(:\d+)?(\/\S*)?$/i.test(raw)) return 'http://' + raw
   try {
     const base = new URL(baseUrl)
     const p = raw.startsWith('/') ? raw : '/' + raw

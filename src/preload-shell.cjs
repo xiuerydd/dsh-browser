@@ -9,8 +9,7 @@ const on = (channel) => (cb) => {
 
 contextBridge.exposeInMainWorld('dshBrowser', {
   env: {
-    ready: () => ipcRenderer.invoke('shell:ready'),
-    onInfo: on('evt:env')
+    ready: () => ipcRenderer.invoke('shell:ready')
   },
   win: {
     minimize: () => ipcRenderer.invoke('win:minimize'),

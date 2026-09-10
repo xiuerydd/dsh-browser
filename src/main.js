@@ -317,6 +317,7 @@ function main() {
   }
 
   // ---------- 应用菜单 ----------
+  let menu = null
   function buildMenu() {
     const st = serverMgr.status()
     const stateLabel = {
@@ -411,7 +412,6 @@ function main() {
     Menu.setApplicationMenu(menu)
   }
 
-  let menu = null
   function toggleAlwaysOnTop(value) {
     const next = typeof value === 'boolean' ? value : !win?.isAlwaysOnTop()
     if (win && !win.isDestroyed()) win.setAlwaysOnTop(next, 'floating')
