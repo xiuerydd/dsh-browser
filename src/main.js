@@ -60,6 +60,18 @@ function main() {
     }
   }
 
+  /** 剥离 URL 中的 token 参数（持久化/展示时使用，避免陈旧 token 落盘）。 */
+  const stripToken = (u) => {
+    try { const x = new URL(u); x.searchParams.delete('token'); return x.href } catch { return u }
+  }
+
+  /** 给内部地址附加（或刷新）当前 token。 */
+  const withToken = (u) => {
+    const t = serverMgr.webToken
+    if (!t) return u
+    try { const x = new URL(u); x.searchParams.set('token', t); return x.href } catch { return u }
+  }
+
   const openExternal = (url) => {
     try {
       const u = new URL(url)
@@ -84,6 +96,18 @@ function main() {
   })
   serverMgr.on('log', (line) => {
     sendToShell('evt:server-log', line)
+  })
+  // 服务（重新）启动后 token 更新：所有内部标签页刷新为带新 token 的地址
+  serverMgr.on('token', (token) => {
+    for (const g of guests.values()) {
+      if (g.webContents.isDestroyed()) continue
+      const cur = g.webContents.getURL()
+      if (cur.startsWith('dshb:')) continue
+      const raw = g.pendingUrl || cur
+      if (!raw || classify(raw, navCtx()) !== 'internal') continue
+      g.pendingUrl = withToken(stripToken(raw))
+      g.webContents.loadURL(g.pendingUrl).catch(() => {})
+    }
   })
 
   // ---------- guest 管理 ----------
@@ -217,7 +241,7 @@ function main() {
     for (const g of guests.values()) {
       if (g.webContents.isDestroyed()) continue
       const u = g.pendingUrl || g.webContents.getURL()
-      if (u && classify(u, navCtx()) === 'internal') urls.push(u)
+      if (u && classify(u, navCtx()) === 'internal') urls.push(stripToken(u))
     }
     settings.set({ lastTabs: urls })
   }
@@ -435,7 +459,7 @@ function main() {
   function initialTabs() {
     if (settings.get('shell.restoreTabs')) {
       const last = settings.get('lastTabs') ?? []
-      const usable = last.filter((u) => classify(u, navCtx()) === 'internal')
+      const usable = last.map(stripToken).filter((u) => classify(u, navCtx()) === 'internal')
       if (usable.length) return usable
     }
     return [serverMgr.homeUrl]
@@ -538,8 +562,8 @@ function main() {
     if (!isNoticeSender(event)) return false
     const g = guests.get(event.sender.id)
     if (!g) return false
-    const target = g.pendingUrl || serverMgr.homeUrl
-    g.webContents.loadURL(target).catch(() => {})
+    const raw = g.pendingUrl || serverMgr.homeUrl
+    g.webContents.loadURL(withToken(stripToken(raw))).catch(() => {})
     return true
   })
   ipcMain.handle('notice:home', (event) => {
@@ -591,7 +615,7 @@ function main() {
           if (g.webContents.isDestroyed()) continue
           const cur = g.webContents.getURL()
           if (cur.startsWith('dshb://notice') && new URL(cur).searchParams.get('kind') === 'load-fail') {
-            const target = g.pendingUrl || serverMgr.homeUrl
+            const target = withToken(stripToken(g.pendingUrl || serverMgr.homeUrl))
             g.webContents.loadURL(target).catch(() => {})
           }
         }

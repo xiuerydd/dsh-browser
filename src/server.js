@@ -1,7 +1,9 @@
 import { execFile, spawn } from 'node:child_process'
 import { EventEmitter } from 'node:events'
+import fs from 'node:fs'
 import http from 'node:http'
 import os from 'node:os'
+import path from 'node:path'
 import { promisify } from 'node:util'
 
 const execFileP = promisify(execFile)
@@ -23,6 +25,7 @@ export class ServerManager extends EventEmitter {
     this.ownsServer = false
     this.child = null
     this.commandPath = null
+    this.webToken = null
     this.logs = []
     this._timer = null
     this._startedAt = 0
@@ -33,7 +36,10 @@ export class ServerManager extends EventEmitter {
     return `http://${s.host}:${s.port}`
   }
 
-  get homeUrl() { return this.url + '/' }
+  get homeUrl() {
+    // 新版 dsh web 启动后会打印带 token 的访问地址；token 由 stdout 自动捕获
+    return this.webToken ? `${this.url}/?token=${encodeURIComponent(this.webToken)}` : this.url + '/'
+  }
 
   get ctx() {
     const s = this.settings.get('server')
@@ -47,6 +53,7 @@ export class ServerManager extends EventEmitter {
       homeUrl: this.homeUrl,
       ownsServer: this.ownsServer,
       commandPath: this.commandPath,
+      webToken: this.webToken,
       startedAt: this._startedAt,
       logCount: this.logs.length
     }
@@ -106,9 +113,28 @@ export class ServerManager extends EventEmitter {
       this.commandPath = cmd
       return cmd
     }
+    if (process.platform === 'win32') {
+      // 直接在 PATH 中找 <cmd>.cmd/.exe/.bat：
+      // where.exe 的输出是控制台编码（GBK），中文用户名路径会被按 UTF-8 误解码成损坏路径；
+      // 且同名无扩展 sh 脚本会被排在首位，shell:true 的 cmd.exe 无法执行。
+      const exts = ['.cmd', '.exe', '.bat']
+      for (const dir of (process.env.PATH || '').split(';')) {
+        if (!dir.trim()) continue
+        for (const ext of exts) {
+          const p = path.join(dir.trim(), cmd + ext)
+          if (fs.existsSync(p)) {
+            this.commandPath = p
+            return p
+          }
+        }
+      }
+    }
     try {
       const { stdout } = await execFileP('where.exe', [cmd])
-      const first = stdout.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
+      const lines = stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
+      const first = process.platform === 'win32'
+        ? (lines.find((l) => l.toLowerCase().endsWith('.cmd')) ?? lines[0])
+        : lines[0]
       if (first) {
         this.commandPath = first
         return first
@@ -170,10 +196,10 @@ export class ServerManager extends EventEmitter {
     }
 
     this.child.stdout?.on('data', (d) => {
-      for (const line of String(d).split(/\r?\n/)) if (line.trim()) this.log('out', line)
+      for (const line of String(d).split(/\r?\n/)) if (line.trim()) { this.log('out', line); this.#maybeCaptureToken(line) }
     })
     this.child.stderr?.on('data', (d) => {
-      for (const line of String(d).split(/\r?\n/)) if (line.trim()) this.log('err', line)
+      for (const line of String(d).split(/\r?\n/)) if (line.trim()) { this.log('err', line); this.#maybeCaptureToken(line) }
     })
     this.child.on('error', (err) => {
       this.log('err', `[dsh-browser] 进程错误: ${err.message}`)
@@ -182,6 +208,7 @@ export class ServerManager extends EventEmitter {
       this.log('out', `[dsh-browser] 服务进程已退出 (code=${code} signal=${signal ?? 'none'})`)
       this.child = null
       this.ownsServer = false
+      this.webToken = null
       this.settings.set({ server: { lastChildPid: null } })
       if (this.state === 'starting' || this.state === 'online') this.#setState('stopped')
     })
@@ -259,6 +286,15 @@ export class ServerManager extends EventEmitter {
     this.#setState('checking')
     this.#startPolling(false)
     return this.status()
+  }
+
+  /** 从 dsh web 启动输出中捕获访问 token（如 "dsh web: http://127.0.0.1:3080/?token=xxx"）。 */
+  #maybeCaptureToken(line) {
+    const m = /https?:\/\/\S*[?&]token=([A-Za-z0-9_\-]+)/.exec(String(line))
+    if (!m || m[1] === this.webToken) return
+    this.webToken = m[1]
+    this.log('out', '[dsh-browser] 已捕获 dsh web 访问 token，标签页将自动携带')
+    this.emit('token', this.webToken)
   }
 
   #startPolling(fast = false) {
