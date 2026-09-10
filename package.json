@@ -10,7 +10,7 @@
   "scripts": {
     "start": "electron .",
     "icons": "node scripts/make-icons.mjs",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win nsis"
   },
   "devDependencies": {
     "electron": "^43.4.0",
@@ -30,8 +30,14 @@
       "output": "dist"
     },
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "assets/icons/dsh-browser.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "DeepSeek Harness Browser"
     }
   }
 }
