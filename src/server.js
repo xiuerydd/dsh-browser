@@ -140,12 +140,16 @@ export class ServerManager extends EventEmitter {
         }
       }
     }
-    // 内置 dsh 兜底：随安装包分发（asar.unpacked）或项目 node_modules 中的副本，
-    // 以 Electron 自带 Node 运行（ELECTRON_RUN_AS_NODE=1），无需系统安装 Node/dsh
+    // 内置 dsh 兜底：随安装包分发（resources/dsh-runtime）或项目 node_modules 中的副本，
+    // 以 Electron 自带 Node 运行（ELECTRON_RUN_AS_NODE=1），无需系统安装 Node/dsh。
+    //
+    // --expose-internals 是必需的：web profile 默认 patchReload="live"，会加载
+    // cordis-plugin-hmr，而该插件要求 Node 以 --expose-internals 启动，否则插件树
+    // 加载失败、进程在约 40 秒后退出（且期间端口是 LISTENING 的，容易被误判为正常）。
     for (const bundled of BUNDLED_DSH_CANDIDATES) {
       if (fs.existsSync(bundled)) {
         this.commandPath = bundled
-        return { cmd: process.execPath, preArgs: [bundled], bundled: true }
+        return { cmd: process.execPath, preArgs: ['--expose-internals', bundled], bundled: true }
       }
     }
     try {
@@ -203,13 +207,19 @@ export class ServerManager extends EventEmitter {
     const spawnArgs = [...(resolved.preArgs ?? []), ...args]
     this.log('out', `[dsh-browser] $ ${[spawnCmd, ...spawnArgs].join(' ')}`)
     try {
+      // 内置 dsh 以 Electron 自带 Node 运行。必须剥掉外部注入的 NODE_OPTIONS：
+      // 它可能带 --require 或其它 Node 参数，干扰 dsh 自身的文件锁与子进程行为
+      // （实测 NODE_OPTIONS 里挂 fs hook 会导致 dsh 删不掉 profile 锁而启动超时）。
+      const childEnv = { ...process.env }
+      if (resolved.bundled) {
+        delete childEnv.NODE_OPTIONS
+        childEnv.ELECTRON_RUN_AS_NODE = '1'
+      }
       this.child = spawn(spawnCmd, spawnArgs, {
         cwd: s.workspaceDir || os.homedir(),
         shell: !resolved.bundled,
         windowsHide: true,
-        env: resolved.bundled
-          ? { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
-          : { ...process.env }
+        env: childEnv
       })
       this.ownsServer = true
     } catch (err) {

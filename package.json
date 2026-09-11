@@ -14,11 +14,9 @@
     "verify:bundle": "node scripts/verify-bundle.mjs"
   },
   "devDependencies": {
+    "@deepseek-ai/dsh": "0.1.2-rc.1",
     "electron": "^43.4.0",
     "electron-builder": "^26.15.3"
-  },
-  "dependencies": {
-    "@deepseek-ai/dsh": "0.1.2-rc.1"
   },
   "build": {
     "appId": "com.deepseek.dsh-browser",
@@ -47,7 +45,12 @@
           "!dmg-builder/**",
           "!@electron/**",
           "!@electron-internal/**",
-          "!@malept/**"
+          "!@malept/**",
+          "!node-pty/prebuilds/win32-arm64/**",
+          "!node-pty/prebuilds/darwin-*/**",
+          "!node-pty/prebuilds/linux-*/**",
+          "!node-pty/third_party/conpty/*/win10-arm64/**",
+          "!@img/sharp-wasm32/**"
         ]
       }
     ],

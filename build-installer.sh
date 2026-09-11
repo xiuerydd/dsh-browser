@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 # 构建 DeepSeek Harness Browser 安装包（内置 dsh，装完即用）
 #
-# 为什么分两段：
+# 依赖投放方式：
 #   dsh 的依赖闭包有 400+ 个包，其中大量依赖声明在 peerDependencies 里。
 #   electron-builder 的依赖收集器只沿 dependencies 链递归，会静默漏掉这些包，
-#   构建成功但运行时报 ERROR_MODULE_NOT_FOUND。所以先用 --dir 出骨架，
-#   再用 Python 多线程把完整 node_modules 投放到 resources/dsh-runtime/，
-#   最后用 --prepackaged 直接出安装包（跳过文件收集，快得多）。
+#   所以 dsh **不放进 dependencies**（那样会被塞进 app.asar，白占约 146MB），
+#   而是用 extraResources 把整个 node_modules 作为资源目录投放到
+#   resources/dsh-runtime/node_modules，由 server.js 用 process.execPath 运行。
+#
+#   若 extraResources 因环境原因没投全（闭包校验会报出来），
+#   脚本会自动回退到 scripts/stage-dsh-runtime.py 多线程补投。
 #
 # 用法：
 #   bash build-installer.sh          # 完整流程，出 NSIS 安装包
@@ -16,7 +19,7 @@
 #   PYTHON      指定 python 解释器（默认自动探测 python3 / python / py）
 #   MIRROR=0    不使用国内镜像
 #
-# 本机（WorkBuddy 沙箱）额外注意：
+# WorkBuddy/CodeBuddy 沙箱环境额外注意：
 #   若构建中途报 EPERM / EBUSY，先设：
 #     export CODEBUDDY_SAFE_DELETE_ENABLED=0
 #     export CODEBUDDY_SAFE_DELETE_BULK_THRESHOLD=100000
@@ -60,28 +63,44 @@ if [ "${1:-}" = "--dir" ]; then
   exit 0
 fi
 
-echo ">>> [1/4] 生成应用骨架 -> $OUT"
+echo ">>> [0/5] 预检：node_modules 完整性（防残缺包）"
+"$PY" scripts/check-node-modules-integrity.py || {
+  echo
+  echo "!!! node_modules 有残缺，先修复："
+  echo "    $PY scripts/repair-node-modules.py"
+  exit 1
+}
+
+echo
+echo ">>> [1/5] 生成应用骨架 -> $OUT"
 npx electron-builder --win --dir -c.directories.output="$OUT"
 
 UNPACKED="$OUT/win-unpacked"
+DEPS="$UNPACKED/resources/dsh-runtime/node_modules"
 
 # 骨架健康检查：确认图标/版本信息已写入 exe。
 # 完整构建的产物才带图标；构建被中断或失败时 exe 会保留 Electron 默认图标，
 # 拿它去 --prepackaged 出包会导致装完图标不对（功能却正常，很难发现）。
 echo
-echo ">>> [1b/4] 检查骨架健康度（图标是否写入）"
+echo ">>> [2/5] 检查骨架健康度（图标是否写入）"
 "$PY" scripts/check-skeleton.py "$UNPACKED"
 
 echo
-echo ">>> [2/4] 投放完整依赖闭包到 $UNPACKED/resources/dsh-runtime"
-"$PY" scripts/stage-dsh-runtime.py "$UNPACKED"
+echo ">>> [3/5] 校验依赖闭包"
+if ! node scripts/verify-bundle.mjs "$DEPS"; then
+  echo
+  echo "!!! extraResources 未投全，回退到多线程补投 ..."
+  "$PY" scripts/stage-dsh-runtime.py "$UNPACKED"
+  echo
+  node scripts/verify-bundle.mjs "$DEPS"
+fi
 
 echo
-echo ">>> [3/4] 校验运行时闭包完整性"
-node scripts/verify-bundle.mjs "$UNPACKED/resources/dsh-runtime/node_modules"
+echo ">>> [4/5] 验证内置 dsh 运行时可用（不只是端口在监听）"
+"$PY" scripts/verify-dsh-runtime.py "$DEPS" 3077 --expose-internals
 
 echo
-echo ">>> [4/4] 生成安装包 -> dist-$STAMP"
+echo ">>> [5/5] 生成安装包 -> dist-$STAMP"
 npx electron-builder --win nsis --prepackaged "$UNPACKED" -c.directories.output="dist-$STAMP"
 
 echo

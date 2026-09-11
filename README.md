@@ -18,28 +18,73 @@
 
 **安装版（推荐）**：双击安装即可——安装包已**内置 DeepSeek Harness（dsh）**，装完无需 Node.js、无需单独安装 dsh，开箱即用。
 
-构建安装包（两段式，推荐）：
+构建安装包：
 
 ```bash
 npm install                # 首次：安装 electron / electron-builder / @deepseek-ai/dsh
-bash build-installer.sh    # 出应用骨架 + 投放完整依赖 + 生成 NSIS 安装包
+bash build-installer.sh    # 预检 → 出骨架 → 校验 → 生成 NSIS 安装包
 ```
 
-之所以分两段：dsh 的依赖闭包有 400+ 个包、8000+ 个文件，其中大量依赖声明在
-`peerDependencies` 里。electron-builder 的依赖收集器**只沿 `dependencies` 链递归**，
-会静默漏掉这些包（构建成功但运行时报 `ERROR_MODULE_NOT_FOUND`），所以改用
-`extraResources` 把整个 `node_modules` 作为资源目录投放，再走 `--prepackaged` 出包。
+`build-installer.sh` 会依次做：
 
-脚本做的事：
+1. **预检 `node_modules` 完整性** —— `scripts/check-node-modules-integrity.py`
+   用「每个 `.js.map` 必有对应 `.js`」精确查残缺包。
+   （`npm install` 被中断会留下"source map 在、实现文件不在"的包，构建期不报错，
+   运行时才炸，症状是**服务端口在监听但所有接口返回 404**。）
+2. `electron-builder --win --dir` 出应用骨架
+3. **检查骨架健康度** —— `scripts/check-skeleton.py`
+   确认自定义图标已写入 exe。构建被中断时 exe 会保留 Electron 默认图标，
+   拿它去打包会导致装完图标不对。
+4. **校验依赖闭包** —— `scripts/verify-bundle.mjs`
+   按 `dependencies` + `peerDependencies` 递归算运行时闭包，0 缺失才继续。
+5. **验证内置 dsh 真正可用** —— `scripts/verify-dsh-runtime.py`
+   跨过插件树加载窗口后确认进程存活、`GET /` 返回 401。
+6. `electron-builder --win nsis --prepackaged` 生成安装包
 
-1. `electron-builder --win --dir` 出应用骨架（含 `app.asar`）
-2. `python scripts/stage-dsh-runtime.py <win-unpacked>` 多线程投放完整 `node_modules`
-   到 `resources/dsh-runtime/node_modules`
-3. `node scripts/verify-bundle.mjs <路径>` 校验运行时闭包完整性（0 缺失才继续）
-4. `electron-builder --win nsis --prepackaged <win-unpacked>` 生成安装包
+### 为什么 dsh 放在 devDependencies
+
+`@deepseek-ai/dsh` 是**运行时资源**，但不放在 `dependencies` 里。原因是 electron-builder
+的依赖收集器只沿 `dependencies` 链递归，而 dsh 生态有 200+ 个包把依赖声明在
+`peerDependencies`，会被静默漏掉（构建成功但运行时报 `ERROR_MODULE_NOT_FOUND`）；
+而且收集到的内容会被塞进 `app.asar`，与 `resources/dsh-runtime/` **重复投放约 117MB**。
+
+所以改为：dsh 放 `devDependencies`（保证 `npm install` 会装），
+再用 `extraResources` 把整个 `node_modules` 作为资源目录投放到
+`resources/dsh-runtime/node_modules`，由 `server.js` 用 `process.execPath` 运行。
+
+> 注意：如果用 `npm install --production` / `npm ci --omit=dev` 安装依赖，
+> devDependencies 不会装，`extraResources` 会拷不到 dsh。
+
+### 内置 dsh 的启动参数
+
+`server.js` 启动内置 dsh 时固定带 `--expose-internals`。
+web profile 默认 `patchReload: "live"`，会加载 `cordis-plugin-hmr`，
+而该插件要求 Node 以 `--expose-internals` 启动，否则插件树加载失败、
+进程在约 40 秒后退出（**期间端口是 LISTENING 的，很容易被误判为正常**）。
 
 > Windows 上如果构建被安全软件/沙箱拦截，需要允许大量文件写入。
-> 构建产物在 `out-<时间戳>/`（解包版）和 `dist-final/`（安装包）。
+> 构建产物在 `out-<时间戳>/`（解包版）和 `dist-<时间戳>/`（安装包）。
+
+### 排查工具
+
+| 脚本 | 用途 |
+|---|---|
+| `scripts/blackbox-test.py` | 黑盒测试套件（冷启动/单实例/端口冲突/退出清理等 8 项） |
+| `scripts/verify-dsh-runtime.py` | 验证某份 dsh 运行时是否真正可用 |
+| `scripts/verify-installed-app.py` | 端到端验证已安装应用（`--dev` 可验证开发模式） |
+| `scripts/check-node-modules-integrity.py` | 查残缺包 |
+| `scripts/repair-node-modules.py` | 定点修复残缺包（从 registry 拉原包补齐） |
+| `scripts/check-skeleton.py` | 查骨架图标是否写入 |
+| `scripts/verify-bundle.mjs` | 校验依赖闭包完整性 |
+| `scripts/stage-dsh-runtime.py` | 多线程投放依赖（extraResources 失败时的回退） |
+
+### 已知坑：孤儿锁
+
+dsh 的跨进程锁（`$DSH_HOME/**/*.lock`）**设计上不自动清理**——
+源码注释写明「orphan recovery is an operator action」。
+任何一次 dsh 异常退出（崩溃 / 强杀 / 断电）都会留下永久锁，
+之后启动会报 `atomic-write: timed out waiting for the writer lock`。
+**处理**：确认没有 dsh 进程在跑之后，删掉 `~/.dsh` 下的 `*.lock`。
 
 **源码运行**：要求 Windows 10/11 + Node.js 18+
 
