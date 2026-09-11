@@ -75,7 +75,12 @@ function main() {
   const openExternal = (url) => {
     try {
       const u = new URL(url)
-      if (u.protocol === 'http:' || u.protocol === 'https:') shell.openExternal(u.href)
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        // 记录下来源与目标，便于排查"为什么弹出了系统浏览器"
+        console.log('[dsh-browser] 外部链接转交系统浏览器:', u.href)
+        serverMgr.log('out', `[dsh-browser] 外部链接已在系统浏览器打开: ${u.href}`)
+        shell.openExternal(u.href)
+      }
     } catch {
       // ignore malformed urls
     }
